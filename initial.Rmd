@@ -1,0 +1,442 @@
+---
+#title: "Makroekonometrijos antros praktinės užduoties ataskaita"
+output: pdf_document
+#fig_caption: yes
+   # number_sections: no
+   # toc: true table of contents=> turinys
+#bibliography: library.bib
+header-includes:
+- \usepackage{placeins}
+---
+ \begin{titlepage}
+
+%----------------------------------------------------------------------------------------
+%	HEADING SECTIONS
+%----------------------------------------------------------------------------------------
+\begin{center}
+\textsc{\Large VILNIAUS UNIVERSITETAS \\[0.1\baselineskip] MATEMATIKOS IR INFORMATIKOS FAKULTETAS \\[0.4\baselineskip] EKONOMETRINĖS ANALIZĖS KATEDRA}\\[6cm] % Name of your university/college
+
+
+
+%----------------------------------------------------------------------------------------
+%	TITLE SECTION
+%----------------------------------------------------------------------------------------
+
+
+{ \Large \bfseries Makroekonometrijos \\ pratybų atsiskaitymas }\\[0.4cm] % Title of your document
+
+ 
+\textsc{ 2 užduotis }\\[4cm] % Minor heading such as course title
+\end{center}
+%----------------------------------------------------------------------------------------
+%	AUTHOR SECTION
+%----------------------------------------------------------------------------------------
+
+
+\begin{flushright}
+ \large
+\emph{Atliko:} 4 kurso 1 grupės studentės\\
+Laura Almanytė ir\\
+Monika Vodzinskaitė \\[1cm] % Your name
+
+\end{flushright}
+
+\vfill % Fill the rest of the page with whitespace
+
+
+
+\end{titlepage}
+
+
+```{r setup, message=FALSE, echo=FALSE, results='hide', include=FALSE}
+library(rmarkdown)
+library(digest)
+library(Rcpp)
+library(stringi)
+library(urca)
+library(dynlm)
+library(systemfit)
+library(knitr)
+Sys.setlocale(,'Lithuanian')
+```
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Nagrinėjamas Mundell-Fleming-Dornbush modelis :
+
+\begin{equation*}
+MFD =  \begin{cases}
+C_t = f_1 (Y_t)\\
+I_t = f_2 (r_t, Y_t) \\
+NX_t = f_3 (ec_t, Y_t)\\
+M_t / P_t = f_4 (r_t, Y_t) \\
+\pi_t = f_5 (\pi_{t-1}, \Delta Y_t )\\
+Y_t = C_t+ I_t+NX_t+G_t\\
+\pi_t = \frac {P_t - P_{t-4}} {P_{t-4}}\\
+r_t = \frac {i_t - \pi_t} {1+ \pi_t}
+\end{cases}
+\end{equation*}
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Čia  
+$C_t$ - namų ūkių galutinis vartojimas  
+$I_t$ - bendrosios investicijos  
+$NX_t$ - grynasis eksportas ($NX_t= X_t - IM_t$ arba logaritmams $log NX_t = log(X_t/IM_t)$)  
+$M_t$ - pinigų kiekis (platieji pinigai)  
+$P_t$ - kainų indeksas (vartotojų kainų indeksas, BVP defliatorius)  
+$G_t$ - valdžios galutinis vartojimas  
+$Y_t$ - bendrasis vidaus produktas (BVP)  
+$r_t$ - realioji palūkanų norma (vieneto dalis)  
+$ec_t$ - efektyvusis valiutos keitimo kursas  
+$pi_t$ - metinė infliacija (vieneto dalis)  
+$i_t$ - nominalioji vidutinė vidutinio laikotarpio paskolų palūkanų norma (vieneto dalis)  
+
+#Duomenys  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Modeliui nagrinėti pasirinkome ketvirtinius Italijos duomenis. Kintamieji: valdžios ir namų ūkių galutinis vartojimas,  prekių ir paslaugų importas bei eksportas, bendrosios investicijos, palūkanų norma,  BVP. Šie duomenys yra nusezoninti ir pateikti kaip procentinis augimas lyginant su praėjusiu laikotarpiu.  
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Likusieji kintamieji: valiutos keitimo kursas ir pinigų pasiūla nėra niekaip transformuoti, todėl valiutos keitimo kurso eilutę visų pirma nusezoniname ir transformuojame imdami skirtumus, o pinigų pasiūlą nudefliuojame ir taip pat diferencijuojame. Pasinaudodami formulėmis apskaičiuojame infliaciją, realiąją palūkanų normą ir grynajį eksportą.
+
+
+```{r , message=FALSE, echo=FALSE, results='hide'}
+data <- read.csv("C:/Users/Laura/Desktop/MFDdata.csv")
+
+G <- data$Gov
+G <- ts(G[2:66], start =c(2000,2), freq=4)
+#plot(G) #Real Government final consumption expenditure, growth over previous period, sa
+
+P <- data$P
+P <- ts(P[1:66], start =c(2000,1), freq=4)
+#plot(P) #GDP deflator
+
+Imp <- data$Imp
+IM <- ts(Imp[2:66], start =c(2000,2), freq=4)
+#plot(IM) #real imports of goods and services,% growth, sa
+
+Exp <- data$Exp
+X <- ts(Exp[2:66], start =c(2000,2), freq=4)
+#plot(X) #real export of good and services, % growth, sa
+
+Inv <- data$Inv
+I <- ts(Inv[2:66], start =c(2000,2), freq=4)
+#plot(I) #real gross fixed capital formation,% growth over previous period, sa
+
+int.rate <- data$int.rate
+i <- ts(int.rate[2:66], start =c(2000,2), freq=4)
+#plot(i)# long-term interest rate, point growth over previous perod, nsa
+
+Y <- data$Y
+Y <- ts(Y[2:66], start =c(2000,2), freq=4)
+#plot(Y) #real GDP growth , sa
+
+C <- data$C
+C <- ts(C[2:66], start =c(2000,2), freq=4)
+#plot(C) # real private final consumption expenditure, % growth, sa
+
+M <- data$M
+M <- ts(M[1:66], start =c(2000,1), freq=4)
+#plot(M) # Money supply, 2010=100, sa
+
+
+#real Effective Exchange Rate, 2005=100
+ec <- data$ec
+ec <- ts(ec[1:66],start=c(2000, 1), frequency = 4)
+#plot(ec)
+```
+
+```{r , message=FALSE, echo=FALSE, results='hide'}
+############# Duomenu transformacijos ##############
+sf <- stl(ec, s.window = 9)
+#plot(sf)
+
+ec_sa <- ec - sf$time.series[,"seasonal"]
+#plot(ec_sa)
+ec <- diff(log(ec_sa))
+#plot(ec)
+
+NX <- X-IM #grynasis eksportas
+#plot(NX)
+
+M <- (M/P)*100 #nudefliuojam pinigu pasiula
+#plot(M)
+M <- diff(log(M))
+M <- ts(M[1:65], start=c(2000, 2), frequency = 4)
+#plot(M)
+
+#apskaiciuojam infliacija
+pi <- diff(log(P))
+#plot(pi)
+
+n <- length(pi)
+r=ts(rep(NA,n),start=2000,freq=4) # realioji palukanu norma
+for (j in 1:n){
+  r[j] = (i[j]-pi[j])/(1+pi[j])
+}
+r <- ts(r[1:65], start=c(2000, 2), frequency = 4)
+#plot(r)
+
+i <- ts(int.rate[2:66], start =c(2000,2), freq=4)
+pi <- ts(pi[1:65], start=c(2000, 2), frequency = 4)
+
+MP <- M/P[2:66]
+#plot(MP)
+```
+
+#Koreliacinė analizė
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Skaičiuojame koreliacijas tarp kintamųjų, kurių sąryšiai mus domina.
+
+Koreliacija |   Reikšmė
+------------|----------
+cor(Y, C)   |   0.69
+cor(I, r)   |   0.07
+cor(I, Y)   |   0.70
+cor(NX, ec) |   0.29
+cor(NX, Y)  |   0.15
+cor(MP, r)  |   -0.19
+cor(MP, Y)  |   0.01
+cor(pi, Lpi)|   -0.31
+cor(pi, Y)  |   -0.14
+
+
+```{r , message=FALSE,warning=FALSE, echo=FALSE}
+opts_chunk$set(dev = 'pdf')
+###### koreliacine analize ##########
+par(mfrow=c(1,2))
+#cor(Y,C)
+plot(as.numeric(Y),as.numeric(C), xlab="Namų ūkių vartojimas", ylab="BVP")
+
+#cor(I,r)
+plot(as.numeric(I),as.numeric(r),  xlab="Investicijos", ylab="realioji palūkanų norma")
+
+#cor(I, Y)
+plot(as.numeric(I),as.numeric(Y), xlab="Investicijos", ylab="BVP")
+
+#cor(NX, ec)
+plot(as.numeric(NX),as.numeric(ec), xlab="Grynasis eksportas", ylab="valiutos kursas")
+
+#cor(NX,Y)
+plot(as.numeric(NX),as.numeric(Y), xlab="Grynasis eksportas", ylab="BVP")
+
+#cor(MP, r)
+plot(as.numeric(MP),as.numeric(r), xlab="Pinigų paklausa", ylab="palūkanų norma")
+
+#cor(MP, Y)
+plot(as.numeric(MP),as.numeric(Y), xlab="Pinigų paklausa", ylab="BVP")
+
+n=length(pi)
+plot(as.numeric(pi[2:n]),as.numeric(pi[1:(n-1)]),xlab="infliacija",ylab="Infliacijos ankstinys")
+plot(as.numeric(pi),as.numeric(Y),xlab="Infliacija",ylab="BVP")
+#cor(pi[2:n],pi[1:(n-1)])
+#cor(pi,Y)
+
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Tikriname kintamųjų autokoreliacijas: 
+
+```{r , message=FALSE, echo=FALSE}
+opts_chunk$set(dev = 'pdf')
+### acf
+par(mfrow=c(2,2))
+acf(C,main="Privatus vartojimas")
+acf(I,main="Investicijos")
+
+acf(NX,main="Grynasis eksportas")
+acf(MP,main="Pinigų paklausa")
+
+acf(G,main="Valstybės vartojimas")
+acf(Y,main="BVP")
+
+acf(r,main="Reali palūkanų norma")
+acf(ec,main="Efektyvus valiuotos kursas")
+
+acf(pi,main="Infliacija")
+acf(i,main="Nominali palūkanų norma")
+```
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Tikriname kryžmines koreliacijas ir pagal jų rezultatus pasirenkame ankstinių eilę vėliau sudarydami dinaminį modelį.
+
+```{r , message=FALSE, echo=FALSE}
+opts_chunk$set(dev = 'pdf')
+##################################
+##### kryzmine koreliacija
+par(mfrow=c(2,2))
+#1) Tarp vartojimo ir BVP
+ccf(Y,C,main="Privatus vartojimas ir BVP")
+#2) Tarp investicijø ir realios palûkanø normos, bei BVP
+ccf(I,r,main="I ir reali palūkanų norma")
+ccf(I,Y,main="Investicijos ir BVP")
+#3)Tarp grynojo eksporto ir efektyvaus valiutos keitimo kurso bei BVP
+ccf(NX,ec,main="Eksportas ir keitimo kursas")
+ccf(NX,Y,main="Eksportas ir BVP")
+#4)Tarp pinigø paklausos ir realios palûkanø normos bei BVP
+ccf(MP,r,main="MP ir real palūkanų norma")
+ccf(MP,Y,main="Reali palūkanų norma ir BVP")
+#5)Tarp infliacijos ir BVP
+ccf(pi,Y,main="Infliacija ir BVP")
+```
+
+#Modelio vertinimas
+
+\begin{equation*}
+\begin{cases}
+C_t = \alpha_{11} + \beta_{11}Y_t + \epsilon_{1t}\\
+I_t =\alpha_{21} + \alpha_{22}r_t+ \beta_{21}Y_t+ \epsilon_{2t}\\
+NX_t =\alpha_{31} + \alpha_{32}ec_t+ \beta_{31}Y_t+ \epsilon_{3t}\\
+M_t / P_t =\alpha_{41} + \alpha_{42}r_t+ \beta_{41}Y_t + \epsilon_{4t}\\
+\pi_t =\alpha_{51} + \alpha_{52}\pi_{t-1}+ \beta_{51}\Delta Y_t + \epsilon_{5t}\\
+\end{cases}
+\end{equation*}
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Modelį visų pirma įvertinsime OLS ir SUR metodais nors ir žinome, jog vienalaikių sąryšių tarp endogeninių kintamųjų matrica nėra diagonali ir tokio vertinimo įverčiai bus nesuderinti:
+
+```{r , message=FALSE, echo=FALSE, results='hide'}
+###### modeliavimas ######
+n <- 65
+eq1 <- C[1:n-1]~Y[1:n-1]
+eq2 <- I[1:n-1]~r[1:n-1] + Y[1:n-1]
+eq3 <- NX[1:n-1] ~ ec[1:n-1] + Y[1:n-1]
+eq4 <- MP[1:n-1] ~ r[1:n-1] + Y[1:n-1]
+eq5 <- pi[2:n] ~ pi[1:n-1] + diff(Y)
+eq <- list(eq1, eq2, eq3, eq4, eq5)
+
+ols.fit <- systemfit(eq, method = "OLS")
+summary(ols.fit)
+
+
+sur.fit <- systemfit(eq, method = "SUR")
+summary(sur.fit)
+
+```
+
+Koef.|OLS|SUR|  
+----|----|---|  
+$\alpha_{11}$|0.0238|0.0237|  
+$\beta_{11}$|0.5283|0.5299|  
+$\alpha_{21}$|0.0051|0.0051|  
+$\alpha_{22}$|1.0071|1.0071|  
+$\beta_{21}$|-0.0010|-0.0010|  
+$\alpha_{31}$|-0.0211|-0.0032|  
+$\alpha_{32}$| 248.81|203.15|  
+$\beta_{31}$|0.5402|0.4926|  
+$\alpha_{41}$|0.00|0.00|  
+$\alpha_{42}$|0.00|0.00|  
+$\beta_{41}$|0.00|0.00|  
+$\alpha_{51}$|0.0059|0.0057|  
+$\alpha_{52}$|-0.2956|-0.2409|  
+$\beta_{51}$|-0.0029|-0.0031|    
+
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Taigi toliau vertiname modelį 2SLS ir 3SLS metodais.
+
+```{r , message=FALSE, echo=FALSE, results='hide'}
+
+Yhat <- lm(Y~G+ec+r+pi)$fitted
+
+iv.1 <- ~ Yhat[1:n-1]
+iv.2 <- ~ r[1:n-1]+Yhat[1:n-1]
+iv.3 <- ~ ec[1:n-1]+Yhat[1:n-1]
+iv.4 <- ~ r[1:n-1]+Yhat[1:n-1]
+iv.5 <- ~ pi[1:(n-1)]+diff(Yhat)
+iv <- list(iv.1,iv.2,iv.3,iv.4,iv.5)
+
+sls2.fit <- systemfit(eq,method="2SLS",inst=iv)
+summary(sls2.fit)
+sls3.fit <- systemfit(eq,method="3SLS",inst=iv)
+summary(sls3.fit)
+```
+
+Koef.|2SLS|3SLS|  
+----|----|---|  
+$\alpha_{11}$|0.0263|0.0260|  
+$\beta_{11}$|0.4092|0.4232|  
+$\alpha_{21}$|0.0054|0.0055|  
+$\alpha_{22}$|1.0076|1.0085|  
+$\beta_{21}$|-0.0139|-0.0158|  
+$\alpha_{31}$|-0.0737|0.0443|  
+$\alpha_{32}$|324.37|105.68|  
+$\beta_{31}$|1.6893|-0.0420|  
+$\alpha_{41}$|0.00|0.00|  
+$\alpha_{42}$|0.00|0.00|  
+$\beta_{41}$|0.00|0.00|  
+$\alpha_{51}$|0.0050|0.0032|  
+$\alpha_{52}$|-0.1673|0.1969|  
+$\beta_{51}$|-0.0245|-0.0391|    
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Palyginame gautus įverčius: dauguma labai panašūs, tačiau kai kurie skiriasi ženklu. Iš koeficientų ženklų galime teigti, jog tinkamesni yra 3SLS įverčiai. Patikriname 2SLS ir 3SLS metodais įvertintus modelius Hausmano testu, esančiu R bibliotekoje *systemfit*. Testo nulinė hipotezė teigia, kad visi egzogeniniai kintamieji yra nekoreliuoti su paklaidomis. Jei ši hipotezė teisinga, tuomet abu 2SLS ir 3SLS įverčiai yra suderinti, bet tik 3SLS duos efektyvius įverčius. Jei priimsime testo alternatyvią hipotezę, tai vadinasi 2SLS įverčiai yra suderinti, o 3SLS - nesuderinti. 
+
+```{r , message=FALSE, echo=FALSE}
+hausman.systemfit(sls2.fit, sls3.fit)
+```
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Testo gauta p-reikšmė lygi 0.6458, todėl neatmetame nulinės hipotezės ir pasirenkame 3SLS metodu įvertintą modelį kaip geriausią.
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Papildomai sudarome dinaminį modelį. Asižvelgę į autokoreliacijas, įtraukiame aiškinamųjų kintamųjų ankstinių. O atsižvelgę į kryžmines koreliacijas įtraukiame į modelį aiškinančiųjų kintamųjų ankstinių. Modelį įvertiname 3SLS metodu. 
+
+\begin{equation*}
+\begin{cases}
+C_t = \alpha_{11} + \beta_{11}Y_t +  \beta_{12}Y_{t-1} + \epsilon_{1t}\\
+I_t =\alpha_{21} + \alpha_{22}r_t+ \beta_{21}Y_t+ +  \beta_{22}Y_{t-1} +  \beta_{23}Y_{t-2} + \epsilon_{2t}\\
+NX_t =\alpha_{31} + \alpha_{32}ec_t+ \beta_{31}Y_t+ \epsilon_{3t}\\
+M_t / P_t =\alpha_{41} + \alpha_{42}r_t+ \beta_{41}Y_t + \epsilon_{4t}\\
+\pi_t =\alpha_{51} + \alpha_{52}\pi_{t-1}+ \beta_{51}\Delta Y_t + \epsilon_{5t}\\
+\end{cases}
+\end{equation*}
+
+
+```{r , message=FALSE, echo=FALSE, results=FALSE}
+
+n <- 65
+eq.1 <- C[5:(n-1)]~Y[5:(n-1)]+Y[4:(n-2)]+C[4:(n-2)]
+eq.2 <- I[5:(n-1)]~r[5:(n-1)]+Y[5:(n-1)]+Y[4:(n-2)]+Y[3:(n-3)]
+eq.3 <- NX[5:(n-1)]~ec[5:(n-1)]+Y[5:(n-1)]
+eq.4 <- MP[5:(n-1)]~r[5:(n-1)]+Y[5:(n-1)]+MP[4:(n-2)]+MP[3:(n-3)]
+eq.5 <- pi[6:n]~pi[5:(n-1)]+diff(Y[5:n])+pi[4:(n-2)]+pi[3:(n-3)]
+eq.lag <- list(eq.1,eq.2,eq.3,eq.4,eq.5)
+
+Yhat <- lm(Y~G+ec+r+pi)$fitted
+
+instrum.1 <- ~Yhat[5:(n-1)]+Yhat[4:(n-2)]+C[4:(n-2)]
+instrum.2 <- ~r[5:(n-1)]+Yhat[5:(n-1)]+Yhat[4:(n-2)]+Yhat[3:(n-3)]
+instrum.3 <- ~ec[5:(n-1)]+Yhat[5:(n-1)]
+instrum.4 <- ~r[5:(n-1)]+Yhat[5:(n-1)]+MP[4:(n-2)]+MP[3:(n-3)]
+instrum.5 <- ~pi[5:(n-1)]+diff(Yhat[5:n])+pi[4:(n-2)]+pi[3:(n-3)]
+iv.lag <- list(instrum.1,instrum.2,instrum.3,instrum.4,instrum.5)
+
+fit.3sls.lag <- systemfit(eq.lag,method="3SLS",inst=iv.lag)
+#summary(fit.3sls.lag)
+```
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Gauti įverčiai:  
+
+Koef.|3SLS|  
+----|----|---|  
+$\alpha_{11}$|0.0316| 
+$\beta_{11}$|0.1136|  
+$\beta_{12}$|1.0892|  
+$\beta_{13}$|-0.5789|  
+$\alpha_{21}$|-0.1749|  
+$\alpha_{22}$|0.9660|  
+$\beta_{21}$|-3.1307| 
+$\beta_{22}$|8.0889| 
+$\beta_{23}$|-6.1276| 
+$\alpha_{31}$|0.0563|  
+$\alpha_{32}$|228.84|  
+$\beta_{31}$|1.8098|  
+$\alpha_{41}$|0.00|  
+$\alpha_{42}$|0.00|  
+$\beta_{41}$|0.00|  
+$\beta_{42}$|-0.0095|  
+$\beta_{43}$|0.1972|  
+$\alpha_{51}$|-0.0066|  
+$\alpha_{52}$|1.8464|  
+$\beta_{51}$|-0.1086| 
+$\beta_{52}$|2.7704| 
+$\beta_{53}$|-2.0316| 
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dinaminiame modelyje, beveik visi koeficientai gaunami nereikšmingi. Taip pat palyginus su statiniu modeliu pagal liekanų kvadratų sumą, pasirenkame statinį modelį, nes SSR_din = 1076.65, o SSR_stat = 436.98  
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Taigi galutiniu modeliu pasirenkame statinį modelį, įvertintą 3SLS metodu: 
+
+\begin{equation*}
+\begin{cases}
+C_t = 0.02 + 0.42Y_t + \epsilon_{1t}\\
+I_t = -0.21 + 0.6r_t - 0.67Y_t+ \epsilon_{2t}\\
+NX_t =-0.01 + 217ec_t + 0.84Y_t+ \epsilon_{3t}\\
+M_t / P_t = 0r_t+ 0Y_t + \epsilon_{4t}\\
+\pi_t =0.004 - 0.08\pi_{t-1}- 0.02\Delta Y_t + \epsilon_{5t}\\
+\end{cases}
+\end{equation*}
