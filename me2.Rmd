@@ -15,13 +15,66 @@ Susitvarkom datas
 library(dplyr)
 library(lubridate)
 qtod <- function(x) {
-    x<-gsub("Y","",x)
-    z<-strsplit("Q",x)
-    yy<-sapply(x,function(x)x[1])
-    qq<-sapply(x,function(x)x[2]) %>% as.numeric
-    mm <- (qq-1)*3+1
-    ymd(paste0(yy,"-",qq,"-01"))
-    
+    x <- gsub("Y","",x)
+    z <- strsplit(x,"Q")
+    yy <- sapply(z,function(x)x[1])
+    qq <- sapply(z,function(x)x[2]) %>% as.numeric
+    mm <- (qq - 1)*3 + 1
+    ymd(paste0(yy,"-",mm,"-01"))
 }
-dt <- dt %>% mutate(Date = qtod(Time)) 
+dt <- dt %>% mutate(Date = qtod(Time)) %>% 
+    mutate(MP = M/P, pi = 100*(log(P)-lag(log(P),1)), 
+           r= (int.rate/100- pi/100)/(1+pi/100)*100,
+           NX = Exp - Imp,
+           pi1 = lag(pi,1))
+
+dt1 <- dt %>% select(-Time,-Date) %>% ts(start = c(2000,1
+),frequency = 4)
+
+dt2 <- dt1 %>% na.omit
+
+```
+
+Tipo pradinė analizė
+```{r}
+library(xts)
+library(dygraphs)
+dtx <- xts(dt %>% select(-Time,-Date), order.by = dt$Date)
+dtx %>% dygraph
+dtx[,c("Y","C","Exp","Imp","Gov","MP")] %>% dygraph
+dtx[,c("int.rate","MP","pi","r")] %>% dygraph
+cor(dt %>% select(-Time,-Date) %>% na.omit)
+
+```
+
+Darom modelį
+
+```{r }
+library(systemfit)
+
+eq1 <- C ~ Y
+eq2 <- Inv ~ r + Y
+eq3 <- NX ~ ec + Y
+eq4 <- MP ~ r + Y
+eq5 <- pi ~ pi1 + Y
+eq <- list(eq1, eq2, eq3, eq4, eq5)
+
+ols.fit <- systemfit(eq, method = "OLS", data = na.omit(dt))
+#summary(ols.fit)
+
+names(ols.fit$eq) <- sapply(eq,function(x)as.character(x[[2]]))
+screenreg(ols.fit,custom.model.names = names(ols.fit$eq))
+```
+
+
+```{r}
+iv.1 <- ~ r+ec
+iv.2 <- ~ r+ec
+iv.3 <- ~ r+ec
+iv.4 <- ~ r+ec
+iv.5 <- ~ r+ec
+iv <- list(iv.1,iv.2,iv.3,iv.4,iv.5)
+
+sls2.fit <- systemfit(eq,method="2SLS",data=na.omit(dt),inst=iv)
+screenreg(sls2.fit,custom.model.names = names(ols.fit$eq))
 ```
