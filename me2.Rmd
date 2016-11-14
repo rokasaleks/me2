@@ -1,0 +1,27 @@
+---
+title: "Makroekonometrija antra užduotis"
+output: html_notebook
+---
+
+Nuskaitom duomenis
+```{r}
+#data <- read.csv("C:/Users/Laura/Desktop/MFDdata.csv")
+dt <- read.csv("data/MFDdata.csv", stringsAsFactors = FALSE)
+```
+
+Susitvarkom datas
+
+```{r}
+library(dplyr)
+library(lubridate)
+qtod <- function(x) {
+    x<-gsub("Y","",x)
+    z<-strsplit("Q",x)
+    yy<-sapply(x,function(x)x[1])
+    qq<-sapply(x,function(x)x[2]) %>% as.numeric
+    mm <- (qq-1)*3+1
+    ymd(paste0(yy,"-",qq,"-01"))
+    
+}
+dt <- dt %>% mutate(Date = qtod(Time)) 
+```
